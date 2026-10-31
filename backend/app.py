@@ -9,8 +9,15 @@ from scipy.signal import resample_poly
 from fastapi import FastAPI, UploadFile, File
 from pyannote.audio import Pipeline
 
-app = FastAPI()
+from services.audio_service import AudioService
+from services.diarization_service import DiarizationService 
+from services.medical_ai_service import MedicalAIService
 
+from services.transcription_service import TranscriptionService
+
+app = FastAPI()
+medical_ai_service = MedicalAIService()
+transcription_service = TranscriptionService()
 # 1. Load Whisper
 print("Loading Whisper model...")
 whisper_model = whisper.load_model("base")
@@ -52,10 +59,7 @@ async def process_audio(audio: UploadFile = File(...)):
         # 3. Transcribe with Whisper
         print("Transcribing audio...")
 
-        transcription = whisper_model.transcribe(
-            temp_path,
-            task="transcribe"
-        )
+        transcription = transcription_service.transcribe(temp_path)
 
         # 4. Load audio for Pyannote
         print("Identifying speakers...")
@@ -118,12 +122,21 @@ async def process_audio(audio: UploadFile = File(...)):
                 "text": segment["text"].strip()
             })
 
+            print("DEBUG transcription keys:", transcription.keys())
+            print("DEBUG transcription:", transcription)
+            # Correct transcript using Ollama
+            print("Correcting medical transcript...")
+
+            corrected_transcript = medical_ai_service.correct_transcript(
+                    transcription["transcript"]
+                )
+
         return {
             "language": transcription["language"],
-            "transcript": transcription["text"],
+            "original_transcript": transcription["transcript"],
+            "corrected_transcript": corrected_transcript,
             "segments": combined_segments
         }
-
     finally:
         if os.path.exists(temp_path):
             os.remove(temp_path)
